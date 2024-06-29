@@ -2,8 +2,8 @@
 
 /*
 To Do:
-    merge drawCard and calculateHandValue together
     detect if player bust (pause) during play 
+    detect if player has a natural
 
     render function
         full
@@ -56,51 +56,68 @@ namespace
     {
         static int DeckIndex;
 
-        std::vector<std::string>& GameDeck;
-        std::vector<std::string> Cards;
+        std::vector<std::string> &GameDeck;
         std::vector<std::string> Display;
+        std::vector<std::string> Cards;
+        DetailLevel Detail_Level;
         bool isPlayer = false;              // Rendering purposes
         int Value = 0;
+        int TrackedAces = 0;
 
-        Hand(std::vector<std::string>& deck, bool player_flag) : GameDeck(deck), isPlayer(player_flag){}
+        Hand(std::vector<std::string>& d,DetailLevel dl, bool p) : GameDeck(d), Detail_Level(dl), isPlayer(p){}
 
         void drawCard()
         {
-            Cards.push_back(GameDeck[DeckIndex]);
+            std::string Card = GameDeck[DeckIndex];
             DeckIndex++;
 
+            Card.pop_back();                            // Remove the suit
+            Cards.push_back(Card);
+
             /* Calculate Hand Value */
-            int TrackedAces = 0;
-
-            for (std::string& Card : Cards)
+            try
+            {Value += std::stoi(Card);
+            }
+            catch(const std::invalid_argument&)
             {
-                Card.pop_back();                    // Remove the suit
-
-                try
+                Value += 10;
+                if (Card[0] == 'A')
                 {
-                    Value += std::stoi(Card);
-                }
-                catch(const std::invalid_argument&)
-                {
-                    Value += 10;
-                    if (Card[0] == 'A')
-                    {
-                        Value += 1;
-                        TrackedAces++;
-                    }
+                    Value += 1;
+                    TrackedAces++;
                 }
             }
-
-            while (Value > 21 && TrackedAces > 0)   // Check Aces
+            
+            if (Value > 21 && TrackedAces > 0)                 // Demote Ace
             {
                 Value -= 10;
                 TrackedAces--;
             }
         }
 
-        void renderCards(DetailLevel detail_level)
+        void renderCards()
         {
+            Display.clear();
+            switch (Detail_Level)
+            {
+            case DetailLevel::Full:return;
+            case DetailLevel::Mini:return;
+            case DetailLevel::Minimal:
+            
+                std::string Line;
 
+                if (isPlayer)
+                {Line = "[]     Your Hand : " + std::to_string(Value);
+                }
+                else
+                {Line = "[]     Dealer's Hand : " + std::to_string(Value);
+                }
+                fillLine(Line);
+
+                Display.push_back(Line);
+
+                return;
+            }
         }
 
     };
@@ -122,7 +139,6 @@ namespace
 
 //     case DetailLevel::Minimal:
 
-//         const int VALUE = _calculateHandValue(hand);
 //         std::string Line;
 
 //         if (p)
@@ -132,11 +148,11 @@ namespace
 //         {Line = "[]     Dealer's Hand : " + std::to_string(VALUE);
 //         }
 
-//         _fillLine(Line);
-//         display.push_back(Line);
 //         return;
 //     }
 // }
+
+
 
 void Blackjack::Menu()
 {
@@ -187,82 +203,144 @@ void Blackjack::Table(const int bet)
     fillLine(HeaderLine);
 
     /* Create Deck, Resize Deck, Shuffle Deck */
-    std::vector<std::string> Deck = {
+    std::vector<std::string> BaseDeck = {
     "2H", "3H", "4H", "5H", "6H", "7H", "8H", "9H", "10H", "JH", "QH", "KH", "AH",
     "2D", "3D", "4D", "5D", "6D", "7D", "8D", "9D", "10D", "JD", "QD", "KD", "AD",
     "2C", "3C", "4C", "5C", "6C", "7C", "8C", "9C", "10C", "JC", "QC", "KC", "AC",
     "2S", "3S", "4S", "5S", "6S", "7S", "8S", "9S", "10S", "JS", "QS", "KS", "AS"
     };
 
-    const size_t ORIGIN_SIZE = Deck.size();
-    Deck.resize(ORIGIN_SIZE * Decks);
-    std::copy_n(Deck.begin(),ORIGIN_SIZE,Deck.begin() + ORIGIN_SIZE);
+    std::vector<std::string> Deck;
+    for (int i = 0; i < Decks; i++)
+    {Deck.insert(Deck.end(),BaseDeck.begin(),BaseDeck.end());}
 
     std::random_device rd;
     std::mt19937 g(rd());
     std::shuffle(Deck.begin(),Deck.end(),g);
 
     /* Create Hand, Draw cards in the correct order */
-    Hand Dealer(Deck,false);
-    Hand Player(Deck,true);
+    Hand Dealer(Deck,Detail_Level,false);
+    Hand Player(Deck,Detail_Level,true);
 
     Player.drawCard();
     Dealer.drawCard();
     Player.drawCard();
 
-    Dealer.Cards.push_back("B_");           // B_ is the unidentified flipped card for rendering purposes
-    Dealer.renderCards(Detail_Level);       // Render the dealer's cards onto the Display Vector
-    Dealer.Cards.pop_back();                // Remove the filler card 
-    Dealer.drawCard();                      // Add the dealer's 2nd card to its hand
-
-    /* Player's Play */
+    Dealer.Cards.push_back("B_");       // B_ is the unidentified flipped card for rendering purposes
+    Dealer.renderCards();               // Render the dealer's cards onto the Display Vector
+    Dealer.Cards.pop_back();            // Remove the filler card 
+    Dealer.drawCard();                  // Add the dealer's 2nd card to its hand
 
 
-
-    bool Bust = false;
-    do
+    const bool NATURAL = (Player.Value == 21);
+    bool PlayerBust = false;
+    bool DealerBust = false;
+    if (!NATURAL)
     {
-        Player.renderCards(Detail_Level);
+        /* Player's Play */
         do
         {
-            clearConsole();
-std::cout   << "[][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][]\n"
+            Player.renderCards();
+            do
+            {
+                clearConsole();
+    std::cout   << "[][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][]\n"
+                << "[]                                                                            []\n"
+                <<  HeaderLine
+                << "[]                                                                            []\n";
+                for (std::string& Line : Dealer.Display) {std::cout << Line;}  
+    std::cout   << "[]                                                                            []\n";
+                for (std::string& Line : Player.Display) {std::cout << Line;}
+    std::cout   << "[]                                                                            []\n"
+                << "[]     1. Hit                                                                 []\n"
+                << "[]     2. Stand                                                               []\n"
+                << "[]                                                                            []\n"
+                << "[]     Input : _                                                              []\n"
+                << "[]                                                                            []\n"
+                << "[][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][]\n";
+                const int Y = 10 + Dealer.Display.size() + Player.Display.size();
+                setCursor(16,Y);
+            } while (!getInput(UniversalInput,2,1));        // If Bad Input Redraw and wait for new input
+
+            if (UniversalInput == 1)
+            {
+                Player.drawCard();
+                PlayerBust = (Player.Value > 21);
+            }
+            else 
+            {break;
+            }
+
+        } while (!PlayerBust);
+
+        /* Dealer's Play */
+
+        if (!PlayerBust)
+        {
+            while (Dealer.Value < 17)
+            {Dealer.drawCard();  
+            }
+            DealerBust = (Dealer.Value > 21);
+        }
+    }
+
+    /* Result Conditions, Payout Calculation */
+
+    const bool DRAW_CONDITION = (Player.Value == Dealer.Value) && !PlayerBust;
+    const bool WIN_CONDITION = (   
+        (!PlayerBust && !DRAW_CONDITION && Player.Value > Dealer.Value && Dealer.Value <= 21)
+        ||
+        (DealerBust && !PlayerBust)
+    );
+
+    const float PAYOUT_MULTIPLIER = (NATURAL) ? 1.5 : 2.0;
+    int Payout;
+
+    if (WIN_CONDITION || NATURAL)
+    {Payout = static_cast<int>(bet * PAYOUT_MULTIPLIER);
+    }
+    else if (DRAW_CONDITION)
+    {Payout = bet;
+    }
+    else
+    {Payout = 0;
+    }
+
+    Money += Payout;
+
+    /* Result Screen */
+
+    HeaderLine = "[]     TABLE  |$$$ : " + std::to_string(Money) + " | Bet : " + std::to_string(bet) + "|";
+    fillLine(HeaderLine);
+
+    std::string ResultLine = "[]     You Won : $" + std::to_string(Payout);
+    fillLine(ResultLine);
+
+    Player.renderCards();       // Re-render in case of Bust
+    Dealer.renderCards();
+
+    do
+    {
+            clearConsole(); std::cout
+            << "[][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][]\n"
             << "[]                                                                            []\n"
             <<  HeaderLine
-            << "[]                                                                            []\n";
-            for (std::string& Line : Dealer.Display) {std::cout << Line;}  
-std::cout   << "[]                                                                            []\n";
-            for (std::string& Line : Player.Display) {std::cout << Line;}
-std::cout   << "[]                                                                            []\n"
-            << "[]     1. Hit                                                                 []\n"
-            << "[]     2. Stand                                                               []\n"
+            << "[]                                                                            []\n"; 
+            for (std::string& Line : Dealer.Display) {std::cout << Line;}   std::cout
+            << "[]                                                                            []\n"; 
+            for (std::string& Line : Player.Display) {std::cout << Line;}   std::cout
+            << "[]                                                                            []\n"
+            <<  ResultLine
+            << "[]                                                                            []\n"
+            << "[]     0. Quit                                                                []\n"
+            << "[]     1. Play Again    2. Menu                                               []\n"
             << "[]                                                                            []\n"
             << "[]     Input : _                                                              []\n"
             << "[]                                                                            []\n"
             << "[][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][]\n";
-            const int Y = 9 + Dealer.Display.size() + Player.Display.size();
+            const int Y = 12 + Dealer.Display.size() + Player.Display.size();
             setCursor(16,Y);
-        } while (!getInput(UniversalInput,2,1));               // If Bad Input Redraw and wait for new input
-
-        if (UniversalInput == 1)
-        {Player.drawCard();
-        }
-        else 
-        {break;
-        }
-
-    } while (true);
-
-    /* Dealer's Play */
-
-    while (Dealer.Value < 17)
-    {Dealer.drawCard();  
-    }
-
-    /* Win / Lose Result */
-
-    std::string ResultLine;
-
+    } while (!getInput(UniversalInput,2));
 }
 
 Blackjack::Blackjack(){}
@@ -295,33 +373,36 @@ void Blackjack::Play()
     {
         Menu();
 
-        PlayAgain:                                      // Could be fatal (if this doesn't work try recusive) ((or put another loop))
+        PlayAgain:                                      
+
         switch (UniversalInput)
         {
-        case 1:                                         // Play
-            
-            Betting();
+            case 1:                                         // Play
+            { 
+                Betting();
 
-            if (UniversalInput == 0){break;}
-            
-            const int BET = UniversalInput;
-            Money -= BET;
+                if (UniversalInput == 0){break;}
+                
+                const int BET = UniversalInput;
+                Money -= BET;
 
+                Table(BET);
 
-            Table(BET);
-
-            if (UniversalInput == 1)
-            {goto PlayAgain;
+                if (UniversalInput == 1)
+                {goto PlayAgain;
+                }
+                else if (UniversalInput == 2)
+                {break;
+                }
+                
+                std::cout << "\n\n";
+                return;
             }
-            else if (UniversalInput == 2)
-            {break;
+            default: 
+            {
+                std::cout << "\n\n";
+                return;
             }
-            else
-            {return;
-            }
-            
-            
-        default:return;
         }
     } while (true); 
 }

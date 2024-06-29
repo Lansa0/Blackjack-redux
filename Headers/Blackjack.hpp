@@ -25,7 +25,7 @@ class Blackjack
 {
 private:
 
-    unsigned int Money;
+    unsigned int Money = 500;
     unsigned int Decks = 6;
     bool Verified = false;
     DetailLevel Detail_Level = DetailLevel::Full;
